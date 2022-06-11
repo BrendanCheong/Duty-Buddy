@@ -1,5 +1,5 @@
 # Duty-Buddy
-AAAAAAHHHHHH Hackathon
+AAAAAAHHHHHH CODE EXP 2022
 
 # Developer Setup
 
