@@ -10,7 +10,7 @@ export default function TabTwoScreen() {
 
     return (
         <View style={styles.container}>
-            <Text style={tailwind('font-bold text-3xl')}>Wassup danger</Text>
+            <Text style={tailwind('font-bold text-3xl')}>Hi danger</Text>
             <View style={styles.separator} lightColor="#eee" darkColor="rgba(255,255,255,0.1)" />
             <EditScreenInfo path="/screens/TabTwoScreen.tsx" />
         </View>
