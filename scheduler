@@ -1,0 +1,112 @@
+#Do pip install ortools before you accessing the library
+from ortools.sat.python import cp_model
+
+class Person:
+    def __init__(self, blockout, chosen): #blockout and chosen are tuples of (day, shift) that personnel has blocked out/chosen
+        self.blockout = blockout
+        self.chosen = chosen
+        #points refer to the amount of priority the personnel should get in getting his chosen/not getting his blocked out duty
+        #points is determined by how many dates the personnel has chosen to commit deducted by how many dates the personnel cannot make it for duty
+        self.points = len(chosen) - len(blockout) 
+
+def create_shift_requests(lst_of_people, num_shifts, num_days):
+    #lst_of_people is a list of Person objects that will be the manpower for the shifts
+    #shift_requests is a list of list of list that stores the cost of a person working a shift in a particular day
+    #Cost is based on the person's points and whether they have chosen or blocked out the date
+    shift_requests = []
+    for i in range(len(lst_of_people)):
+        shift_requests.append([])
+        person = lst_of_people[i]
+        for j in range(num_days):
+            shift_requests[i].append([])
+            for k in range(num_shifts):
+                if (j,k) in person.blockout:
+                    shift_requests[i][j].append(-(1 + person.points))
+                elif (j,k) in person.chosen:
+                    shift_requests[i][j].append(1 + person.points)
+                else:
+                    shift_requests[i][j].append(0)
+    return shift_requests
+        
+
+def scheduler(num_personnel, num_shifts, num_days, shift_requests):
+    #Note that the people, shifts and days have already been ordered when shift_requests was made, so ordering matters!
+    all_personnel = range(num_personnel)
+    all_shifts = range(num_shifts)
+    all_days = range(num_days)
+    
+    model = cp_model.CpModel()
+
+    shifts = {}
+    for n in all_personnel:
+        for d in all_days:
+            for s in all_shifts:
+                shifts[(n, d,
+                        s)] = model.NewBoolVar('shift_n%id%is%i' % (n, d, s))
+
+    #Each shift got one person
+    for d in all_days:
+        for s in all_shifts:
+            model.AddExactlyOne(shifts[(n, d, s)] for n in all_personnel)
+
+    #Each personnel works at most one shift per day
+    for n in all_personnel:
+        for d in all_days:
+            model.AddAtMostOne(shifts[(n, d, s)] for s in all_shifts)
+
+    # Try to distribute the shifts evenly
+    min_shifts_per_personnel = (num_shifts * num_days) // num_personnel
+    if num_shifts * num_days % num_personnel == 0:
+        max_shifts_per_personnel = min_shifts_per_personnel
+    else:
+        max_shifts_per_personnel = min_shifts_per_personnel + 1
+    for n in all_personnel:
+        num_shifts_worked = []
+        for d in all_days:
+            for s in all_shifts:
+                num_shifts_worked.append(shifts[(n, d, s)])
+        model.Add(min_shifts_per_personnel <= sum(num_shifts_worked))
+        model.Add(sum(num_shifts_worked) <= max_shifts_per_personnel)
+
+    # pylint: disable=g-complex-comprehension
+    model.Maximize(
+        sum(shift_requests[n][d][s] * shifts[(n, d, s)] for n in all_personnel
+            for d in all_days for s in all_shifts))
+
+    solver = cp_model.CpSolver()
+    status = solver.Solve(model)
+
+    if status == cp_model.OPTIMAL:
+        print('Solution:')
+        for d in all_days:
+            print('Day', d)
+            for n in all_personnel:
+                for s in all_shifts:
+                    if solver.Value(shifts[(n, d, s)]) == 1:
+                        if shift_requests[n][d][s] > 1:
+                            print('Personnel', n, 'works shift', ("PM" if s else "AM"), '(requested).')
+                        elif shift_requests[n][d][s] == 1:
+                            print('Personnel', n, 'works shift', ("PM" if s else "AM"),
+                                  '(not requested).')
+                        else:
+                            print('Personnel', n, 'works shift', ("PM" if s else "AM"),
+                                  '(block out but no choice).')
+            print()
+        print(f'Number of shift requests met = {solver.ObjectiveValue()}')
+    else:
+        print('No optimal solution found !')
+
+#Example
+#Let's say there are 2 shifts in 3 days, and there are 3 personnel to work these shifts,
+#who already come with their own blockout dates and chosen dates
+num_personnel = 3
+num_shifts = 2
+num_days = 3
+PersonA = Person([],[(0,0),(0,1),(1,0),(1,1)])#Feel free to change the blockout/chosen shifts to check if it works
+PersonB = Person([(0,0)],[(1,0),(1,1),(2,0)])
+PersonC = Person([(1,0),(0,1)],[(0,0),(1,1),(2,0),(2,1)])
+lst_of_people = [PersonA, PersonB, PersonC]
+#Create shift requests
+shift_requests = create_shift_requests(lst_of_people, num_shifts, num_days)
+#Solve for optimal scheduling
+scheduler(num_personnel, num_shifts, num_days, shift_requests)
