@@ -5,6 +5,9 @@
     "lib": ["dom", "dom.iterable"],
     "allowJs": true,
     "skipLibCheck": true,
+    "typeRoots": [
+      "./interfaces"
+    ],
     "strict": true,
     "forceConsistentCasingInFileNames": true,
     "noEmit": true,
@@ -17,7 +20,11 @@
     "baseUrl": ".",
     "paths": {
         "@components/*": ["components/*"],
-        "@interfaces/*": ["interfaces/*"]
+        "@interfaces/*": ["interfaces/*"],
+        "@firebase/*": ["firebase/*"],
+        "@hooks/*": ["hooks/*"],
+        "@navigation/*": ["navigation/*"],
+        "@screens/*": ["screens/*"]
     },
     "incremental": true
   },
