@@ -9,61 +9,67 @@ class Person:
         #points is determined by how many dates the personnel has chosen to commit deducted by how many dates the personnel cannot make it for duty
         self.points = len(chosen) - len(blockout) 
 
-def create_shift_requests(lst_of_people, num_shifts, num_days):
+def create_shift_requests(lst_of_people, dict_of_days):
     #lst_of_people is a list of Person objects that will be the manpower for the shifts
-    #shift_requests is a list of list of list that stores the cost of a person working a shift in a particular day
+    #dict_of_days is a dictionary with the day as the key and a list of name of shifts as the value 
+    #shift_requests is a dict of dict of dict that stores the cost of a person working a shift in a particular day
     #Cost is based on the person's points and whether they have chosen or blocked out the date
-    shift_requests = []
+    shift_requests = {}
     for i in range(len(lst_of_people)):
-        shift_requests.append([])
         person = lst_of_people[i]
-        for j in range(num_days):
-            shift_requests[i].append([])
-            for k in range(num_shifts):
-                if (j,k) in person.blockout:
-                    shift_requests[i][j].append(-(1 + person.points))
-                elif (j,k) in person.chosen:
-                    shift_requests[i][j].append(1 + person.points)
+        shift_requests[i] = {}
+        for k in dict_of_days:
+            shift_requests[i][k] = {}
+            for v in range(len(dict_of_days[k])):
+                if (k, dict_of_days[k][v]) in person.blockout:
+                    shift_requests[i][k][v] = -(1 + person.points)
+                elif (k, dict_of_days[k][v]) in person.chosen:
+                    shift_requests[i][k][v] = (1 + person.points)
                 else:
-                    shift_requests[i][j].append(0)
+                    shift_requests[i][k][v] = 0
     return shift_requests
-        
 
-def scheduler(num_personnel, num_shifts, num_days, shift_requests):
-    #Note that the people, shifts and days have already been ordered when shift_requests was made, so ordering matters!
-    all_personnel = range(num_personnel)
-    all_shifts = range(num_shifts)
-    all_days = range(num_days)
-    
+
+def scheduler(lst_of_people, dict_of_days, shift_requests):
+    #Note that the people and shifts have already been ordered when shift_requests was made
+    #(Beacuse unfortunately the solver doesnt accept non integers so I have to use index)
+    #, so ordering matters!
+    num_personnel = len(lst_of_people)
+    all_personnel = range(len(lst_of_people))
+
     model = cp_model.CpModel()
 
     shifts = {}
     for n in all_personnel:
-        for d in all_days:
-            for s in all_shifts:
-                shifts[(n, d,
-                        s)] = model.NewBoolVar('shift_n%id%is%i' % (n, d, s))
+        for d in dict_of_days:
+            for s in range(len(dict_of_days[d])):
+                shifts[(n, d, s)] = model.NewBoolVar('shift_n%id%is%i' % (n, d, s))
 
     #Each shift got one person
-    for d in all_days:
-        for s in all_shifts:
+    for d in dict_of_days:
+        for s in range(len(dict_of_days[d])):
             model.AddExactlyOne(shifts[(n, d, s)] for n in all_personnel)
 
     #Each personnel works at most one shift per day
     for n in all_personnel:
-        for d in all_days:
-            model.AddAtMostOne(shifts[(n, d, s)] for s in all_shifts)
+        for d in dict_of_days:
+            model.AddAtMostOne(shifts[(n, d, s)] for s in range(len(dict_of_days[d])))
+
+    #Find out how many shifts are available
+    total_num_shifts = 0
+    for d in dict_of_days:
+        total_num_shifts += len(dict_of_days[d])
 
     # Try to distribute the shifts evenly
-    min_shifts_per_personnel = (num_shifts * num_days) // num_personnel
-    if num_shifts * num_days % num_personnel == 0:
+    min_shifts_per_personnel = total_num_shifts // num_personnel
+    if total_num_shifts % num_personnel == 0:
         max_shifts_per_personnel = min_shifts_per_personnel
     else:
         max_shifts_per_personnel = min_shifts_per_personnel + 1
     for n in all_personnel:
         num_shifts_worked = []
-        for d in all_days:
-            for s in all_shifts:
+        for d in dict_of_days:
+            for s in range(len(dict_of_days[d])):
                 num_shifts_worked.append(shifts[(n, d, s)])
         model.Add(min_shifts_per_personnel <= sum(num_shifts_worked))
         model.Add(sum(num_shifts_worked) <= max_shifts_per_personnel)
@@ -71,25 +77,25 @@ def scheduler(num_personnel, num_shifts, num_days, shift_requests):
     # pylint: disable=g-complex-comprehension
     model.Maximize(
         sum(shift_requests[n][d][s] * shifts[(n, d, s)] for n in all_personnel
-            for d in all_days for s in all_shifts))
+            for d in dict_of_days for s in range(len(dict_of_days[d]))))
 
     solver = cp_model.CpSolver()
     status = solver.Solve(model)
 
     if status == cp_model.OPTIMAL:
         print('Solution:')
-        for d in all_days:
+        for d in dict_of_days:
             print('Day', d)
             for n in all_personnel:
-                for s in all_shifts:
+                for s in range(len(dict_of_days[d])):
                     if solver.Value(shifts[(n, d, s)]) == 1:
-                        if shift_requests[n][d][s] > 1:
-                            print('Personnel', n, 'works shift', ("PM" if s else "AM"), '(requested).')
-                        elif shift_requests[n][d][s] == 1:
-                            print('Personnel', n, 'works shift', ("PM" if s else "AM"),
+                        if shift_requests[n][d][s] >= 1:
+                            print('Personnel', n, 'works shift', dict_of_days[d][s], '(requested).')
+                        elif shift_requests[n][d][s] == 0:
+                            print('Personnel', n, 'works shift', dict_of_days[d][s],
                                   '(not requested).')
                         else:
-                            print('Personnel', n, 'works shift', ("PM" if s else "AM"),
+                            print('Personnel', n, 'works shift', dict_of_days[d][s],
                                   '(block out but no choice).')
             print()
         print(f'Number of shift requests met = {solver.ObjectiveValue()}')
@@ -97,16 +103,16 @@ def scheduler(num_personnel, num_shifts, num_days, shift_requests):
         print('No optimal solution found !')
 
 #Example
-#Let's say there are 2 shifts in 3 days, and there are 3 personnel to work these shifts,
-#who already come with their own blockout dates and chosen dates
-num_personnel = 3
-num_shifts = 2
-num_days = 3
-PersonA = Person([],[(0,0),(0,1),(1,0),(1,1)])#Feel free to change the blockout/chosen shifts to check if it works
-PersonB = Person([(0,0)],[(1,0),(1,1),(2,0)])
-PersonC = Person([(1,0),(0,1)],[(0,0),(1,1),(2,0),(2,1)])
+#Let's say there's 4 days that requires duty, day 1 has 2 shifts(PM Shift requires 2 manpower), day 2 has 3 shifts, day 4 has 1 shift and day 5 has 3 shifts
+#If you require multiple manpower for a shift, for example, day1 PM Shift requires 2 people, you can just do 1:["AM Shift", "PM Shift", "PM Shift"]
+#And there's 3 people who already have their own blackout and chosen dates
+dict_of_days = {1:["AM Shift","PM Shift", "PM Shift"], 2:["AM Shift", "PM Shift", "Night Shift"], 4:["AM Shift"], 5:["AM Shift", "PM Shift", "Night Shift"]}
+PersonA = Person([],[(1,"AM Shift"),(1,"PM Shift"),(2,"AM Shift"),(2,"PM Shift")])#Feel free to change the blockout/chosen shifts to check if it works
+PersonB = Person([(1,"AM Shift")],[(4,"AM Shift"),(5,"PM Shift"),(5,"Night Shift")])
+PersonC = Person([(2,"AM Shift"),(2,"Night Shift")],[(1,"PM Shift"),(4,"AM Shift"),(5,"PM Shift"),(5,"Night Shift")])
 lst_of_people = [PersonA, PersonB, PersonC]
 #Create shift requests
-shift_requests = create_shift_requests(lst_of_people, num_shifts, num_days)
+shift_requests = create_shift_requests(lst_of_people, dict_of_days)
+print(shift_requests)
 #Solve for optimal scheduling
-scheduler(num_personnel, num_shifts, num_days, shift_requests)
+scheduler(lst_of_people, dict_of_days, shift_requests)
